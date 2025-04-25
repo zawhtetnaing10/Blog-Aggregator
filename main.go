@@ -1,21 +1,36 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
+	_ "github.com/lib/pq"
 	"github.com/zawhtetnaing10/Blog-Aggregator/internal/config"
+
+	_ "github.com/lib/pq"
+	"github.com/zawhtetnaing10/Blog-Aggregator/internal/database"
 )
 
 func main() {
-	// Read
+	// Read from config file
 	currentConfig, err := config.Read()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 
+	// Load Database
+	db, err := sql.Open("postgres", currentConfig.DbUrl)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	dbQueries := database.New(db)
+
+	// Initialize State
 	currentState := config.State{
 		Config: &currentConfig,
+		Db:     dbQueries,
 	}
 
 	// Commands struct
@@ -25,6 +40,8 @@ func main() {
 
 	// Register Login Command
 	commands.Register("login", config.LoginHandler)
+	commands.Register("register", config.RegisterHandler)
+	commands.Register("reset", config.ResetHandler)
 
 	cmdArguments := os.Args
 	if len(cmdArguments) < 2 {
@@ -32,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Typed in user name
+	// Separate command name and args for command structs
 	commandName := cmdArguments[1]
 	arguments := cmdArguments[2:]
 
@@ -47,4 +64,5 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+
 }

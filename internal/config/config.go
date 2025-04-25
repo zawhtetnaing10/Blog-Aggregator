@@ -1,10 +1,17 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"time"
+
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
+	"github.com/zawhtetnaing10/Blog-Aggregator/internal/database"
 )
 
 const configFileName = ".gatorconfig.json"
@@ -12,6 +19,7 @@ const configFileName = ".gatorconfig.json"
 // State
 type State struct {
 	Config *Config
+	Db     *database.Queries
 }
 
 // Write the state back to the config file
@@ -57,6 +65,61 @@ func (c *Commands) Run(s *State, cmd Command) error {
 	return nil
 }
 
+// Handle Reset
+func ResetHandler(s *State, cmd Command) error {
+	if err := s.Db.ResetUsers(context.Background()); err != nil {
+		return fmt.Errorf("error resetting users %w", err)
+	}
+
+	fmt.Println("Users table successfully reset")
+
+	return nil
+}
+
+// Handle Register
+func RegisterHandler(s *State, cmd Command) error {
+	// early exit with error if command arguments are empty
+	if len(cmd.Arguments) == 0 {
+		return fmt.Errorf("you need to provide a username to login")
+	}
+
+	// Get the name from command
+	name := cmd.Arguments[0]
+
+	// Return error if already exists
+	_, err := s.Db.GetUser(context.Background(), name)
+	if err == nil {
+		// User exists, exit
+		return fmt.Errorf("user already exists")
+	}
+
+	// Create the params to save to db
+	createUserParams := database.CreateUserParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      name,
+	}
+	// Save to db
+	createdUser, err := s.Db.CreateUser(context.Background(), createUserParams)
+	if err != nil {
+		return fmt.Errorf("error creating user %w", err)
+	}
+
+	// Update config
+	s.Config.CurrentUsername = createdUser.Name
+
+	// Write the config to json file
+	if err := s.SaveConfig(); err != nil {
+		return fmt.Errorf("error saving config %w", err)
+	}
+
+	// Success message
+	fmt.Println("user has been created")
+
+	return nil
+}
+
 // Handle login
 func LoginHandler(s *State, cmd Command) error {
 	// early exit with error if command arguments are empty
@@ -67,8 +130,14 @@ func LoginHandler(s *State, cmd Command) error {
 	// Get user name
 	username := cmd.Arguments[0]
 
+	// Get user from db
+	user, err := s.Db.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("user not found %w", err)
+	}
+
 	// Set username to State
-	s.Config.CurrentUsername = username
+	s.Config.CurrentUsername = user.Name
 
 	// Write the config to json file
 	if err := s.SaveConfig(); err != nil {
