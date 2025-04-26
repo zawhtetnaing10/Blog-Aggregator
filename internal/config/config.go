@@ -66,6 +66,46 @@ func (c *Commands) Run(s *State, cmd Command) error {
 	return nil
 }
 
+// Handle Add Feed
+func AddFeedHandler(s *State, cmd Command) error {
+	// early exit with error if command arguments are empty
+	if len(cmd.Arguments) <= 1 {
+		return fmt.Errorf("your need to provide name and url to post a feed")
+	}
+
+	// Get name and url
+	name := cmd.Arguments[0]
+	url := cmd.Arguments[1]
+
+	// Get current logged in user name
+	loggedInUserName := s.Config.CurrentUsername
+	loggedInUser, err := s.Db.GetUser(context.Background(), loggedInUserName)
+	if err != nil {
+		return err
+	}
+
+	// Create Feed Params
+	feedParams := database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      name,
+		Url:       url,
+		UserID:    uuid.NullUUID{UUID: loggedInUser.ID, Valid: true},
+	}
+
+	// Insert feed into database
+	insertedFeed, err := s.Db.CreateFeed(context.Background(), feedParams)
+	if err != nil {
+		return fmt.Errorf("error inserting feed into db: %w", err)
+	}
+
+	// Print out the inserted feed
+	fmt.Printf("%v\n", insertedFeed)
+
+	return nil
+}
+
 // Agg Handler
 func AggHandler(s *State, cmd Command) error {
 	// Make the api request
