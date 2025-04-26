@@ -42,6 +42,8 @@ func main() {
 	commands.Register("login", config.LoginHandler)
 	commands.Register("register", config.RegisterHandler)
 	commands.Register("reset", config.ResetHandler)
+	commands.Register("users", config.UsersHandler)
+	commands.Register("agg", config.AggHandler)
 
 	cmdArguments := os.Args
 	if len(cmdArguments) < 2 {
@@ -64,5 +66,4 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-
 }

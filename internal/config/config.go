@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/zawhtetnaing10/Blog-Aggregator/internal/database"
+	"github.com/zawhtetnaing10/Blog-Aggregator/internal/network"
 )
 
 const configFileName = ".gatorconfig.json"
@@ -60,6 +61,40 @@ func (c *Commands) Run(s *State, cmd Command) error {
 	// Run the command and check for errors in the same line
 	if err := commandToRun(s, cmd); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// Agg Handler
+func AggHandler(s *State, cmd Command) error {
+	// Make the api request
+	result, err := network.FetchFeed(context.Background(), network.RSS_FEED_URL)
+	if err != nil {
+		return err
+	}
+
+	// Print out the whole feed struct
+	fmt.Printf("%v\n", result)
+
+	return nil
+}
+
+// Users Handler
+func UsersHandler(s *State, cmd Command) error {
+	users, err := s.Db.GetUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("error fetching users: %w", err)
+	}
+
+	loggedInUserName := s.Config.CurrentUsername
+
+	for _, user := range users {
+		if loggedInUserName == user.Name {
+			fmt.Printf("* %v (current)\n", user.Name)
+		} else {
+			fmt.Printf("* %v\n", user.Name)
+		}
 	}
 
 	return nil
