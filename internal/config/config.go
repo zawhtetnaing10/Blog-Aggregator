@@ -66,11 +66,30 @@ func (c *Commands) Run(s *State, cmd Command) error {
 	return nil
 }
 
+// Handle Feeds
+func FeedsHandler(s *State, cmd Command) error {
+	// Get Feeds from DB
+	feeds, err := s.Db.GetFeedsWithUsername(context.Background())
+	if err != nil {
+		return fmt.Errorf("error fetching feeds from db: %w", err)
+	}
+
+	// Print out feed information
+	for index, feed := range feeds {
+		fmt.Printf("Feed : %v\n", index+1)
+		fmt.Printf("  * %v\n", feed.Name)
+		fmt.Printf("  * %v\n", feed.Url)
+		fmt.Printf("  * %v\n", feed.Username)
+	}
+
+	return nil
+}
+
 // Handle Add Feed
 func AddFeedHandler(s *State, cmd Command) error {
 	// early exit with error if command arguments are empty
 	if len(cmd.Arguments) <= 1 {
-		return fmt.Errorf("your need to provide name and url to post a feed")
+		return fmt.Errorf("your need to provide both name and url to post a feed")
 	}
 
 	// Get name and url
@@ -146,7 +165,7 @@ func ResetHandler(s *State, cmd Command) error {
 		return fmt.Errorf("error resetting users %w", err)
 	}
 
-	fmt.Println("Users table successfully reset")
+	fmt.Println("All data has been reset")
 
 	return nil
 }
