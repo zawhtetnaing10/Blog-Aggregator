@@ -1,0 +1,3 @@
+package constants
+
+const ERR_CODE_UNIQUE_CONSTRAINT_VIOLATION = "23505"

@@ -8,10 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
+	"github.com/zawhtetnaing10/Blog-Aggregator/internal/constants"
 	"github.com/zawhtetnaing10/Blog-Aggregator/internal/database"
 	"github.com/zawhtetnaing10/Blog-Aggregator/internal/network"
 )
@@ -78,6 +81,40 @@ func MiddlewareLoggedIn(handler func(s *State, cmd Command, user database.User) 
 
 		return handler(s, cmd, user)
 	}
+}
+
+// Browse Handler
+func BrowseHandler(s *State, cmd Command, user database.User) error {
+	var limit int
+	if len(cmd.Arguments) == 0 {
+		limit = 2
+	} else {
+		convertedInt, err := strconv.ParseInt(cmd.Arguments[0], 10, 32)
+		if err != nil {
+			return fmt.Errorf("error converting the input: %w", err)
+		}
+		limit = int(convertedInt)
+	}
+
+	params := database.GetPostsForUserParams{
+		UserID: uuid.NullUUID{
+			UUID:  user.ID,
+			Valid: true,
+		},
+		Limit: int32(limit),
+	}
+
+	posts, err := s.Db.GetPostsForUser(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("error fetching posts from db: %w", err)
+	}
+
+	fmt.Println("Followed posts : ")
+	for _, post := range posts {
+		fmt.Printf(" * %v\n", post.Title)
+	}
+
+	return nil
 }
 
 // Unfollow Handler
@@ -289,11 +326,72 @@ func scrapeFeeds(s *State) error {
 	}
 
 	// Print out the results
-	fmt.Printf("Newly fetched feeds from %v: \n", fetchedFeeds.Channel.Title)
-	for _, feed := range fetchedFeeds.Channel.Item {
-		fmt.Printf(" * %v\n", feed.Title)
+	fmt.Printf("Fetched feeds from %v: \n", fetchedFeeds.Channel.Title)
+	for _, post := range fetchedFeeds.Channel.Item {
+		// Parse the date and save the post only when parsing is successful
+		parsedDate, err := parseDate(post.PubDate)
+		if err == nil {
+			// Parsing successful, save the post
+			params := database.CreatePostParams{
+				ID:          uuid.New(),
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+				Url:         post.Link,
+				Title:       post.Title,
+				Description: post.Description,
+				PublishedAt: parsedDate,
+				FeedID:      nextFeed.ID,
+			}
+
+			// Add the post to db
+			_, createPostErr := s.Db.CreatePost(context.Background(), params)
+			if createPostErr != nil {
+				// If error is not nil, check if its unique constraint violaton
+				// Only when it's not, print out the error
+				errCode := createPostErr.(*pq.Error).Code
+				if errCode != constants.ERR_CODE_UNIQUE_CONSTRAINT_VIOLATION {
+					fmt.Printf("Error saving post: %v", createPostErr.Error())
+				}
+			}
+		} else {
+			return fmt.Errorf("error parsing date: %w", err)
+		}
 	}
+
+	fmt.Println("Successfully fetched the posts and saved.")
+
 	return nil
+}
+
+// Parse date from server
+func parseDate(date string) (time.Time, error) {
+	// Try multiple formats in sequence
+	formats := []string{
+		time.RFC1123Z,                    // "Mon, 02 Jan 2006 15:04:05 -0700"
+		time.RFC1123,                     // "Mon, 02 Jan 2006 15:04:05 MST"
+		time.RFC822Z,                     // "02 Jan 06 15:04 -0700"
+		time.RFC822,                      // "02 Jan 06 15:04 MST"
+		"2006-01-02T15:04:05Z07:00",      // ISO8601 / RFC3339
+		"2006-01-02T15:04:05-07:00",      // ISO8601 variant
+		"2006-01-02 15:04:05",            // Simple datetime
+		"Mon, 2 Jan 2006 15:04:05 -0700", // RFC1123Z with single-digit day
+	}
+
+	var publishedTime time.Time
+	var err error
+	for _, format := range formats {
+		publishedTime, err = time.Parse(format, date)
+		if err == nil {
+			break
+		}
+	}
+
+	// error parsing time.
+	if err != nil {
+		return time.Time{}, fmt.Errorf("error parsing time: %w", err)
+	}
+
+	return publishedTime, nil
 }
 
 // Utility function to fetch feeds from Network

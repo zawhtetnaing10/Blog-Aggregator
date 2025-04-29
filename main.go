@@ -49,6 +49,7 @@ func main() {
 	commands.Register("follow", config.MiddlewareLoggedIn(config.FollowHandler))
 	commands.Register("following", config.MiddlewareLoggedIn(config.FollowingHandler))
 	commands.Register("unfollow", config.MiddlewareLoggedIn(config.UnfollowHandler))
+	commands.Register("browse", config.MiddlewareLoggedIn(config.BrowseHandler))
 
 	cmdArguments := os.Args
 	if len(cmdArguments) < 2 {
