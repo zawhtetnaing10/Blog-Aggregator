@@ -44,10 +44,11 @@ func main() {
 	commands.Register("reset", config.ResetHandler)
 	commands.Register("users", config.UsersHandler)
 	commands.Register("agg", config.AggHandler)
-	commands.Register("addfeed", config.AddFeedHandler)
+	commands.Register("addfeed", config.MiddlewareLoggedIn(config.AddFeedHandler))
 	commands.Register("feeds", config.FeedsHandler)
-	commands.Register("follow", config.FollowHandler)
-	commands.Register("following", config.FollowingHandler)
+	commands.Register("follow", config.MiddlewareLoggedIn(config.FollowHandler))
+	commands.Register("following", config.MiddlewareLoggedIn(config.FollowingHandler))
+	commands.Register("unfollow", config.MiddlewareLoggedIn(config.UnfollowHandler))
 
 	cmdArguments := os.Args
 	if len(cmdArguments) < 2 {

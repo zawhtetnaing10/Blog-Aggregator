@@ -66,17 +66,59 @@ func (c *Commands) Run(s *State, cmd Command) error {
 	return nil
 }
 
-// Handle Following
-func FollowingHandler(s *State, cmd Command) error {
-	// Current user name
-	user_name := s.Config.CurrentUsername
+// Midel ware logged in
+func MiddlewareLoggedIn(handler func(s *State, cmd Command, user database.User) error) func(s *State, cmd Command) error {
+	return func(s *State, cmd Command) error {
+		user, err := s.Db.GetUser(context.Background(), s.Config.CurrentUsername)
 
-	// Current user
-	user, err := s.Db.GetUser(context.Background(), user_name)
+		if err != nil {
+			return fmt.Errorf("error fetching user: %w", err)
+		}
+
+		return handler(s, cmd, user)
+	}
+}
+
+// Unfollow Handler
+func UnfollowHandler(s *State, cmd Command, user database.User) error {
+	// early exit with error if command arguments are empty
+	if len(cmd.Arguments) == 0 {
+		return fmt.Errorf("you need to provide the feed url to unfollow")
+	}
+	feedUrl := cmd.Arguments[0]
+	feed, err := s.Db.GetFeedByUrl(context.Background(), feedUrl)
 	if err != nil {
-		return fmt.Errorf("error getting user: %w", err)
+		return fmt.Errorf("error fetching feed: %w", err)
 	}
 
+	params := database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		FeedID: feed.ID,
+	}
+
+	// Delete the feed follow entry
+	result, err := s.Db.DeleteFeedFollow(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("error deleting feed: %w", err)
+	}
+
+	// Get the rows affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error fetching the deleted feed: %w", err)
+	}
+	// If rows affected is 0, the feed is unfollowed. Create an error and exit
+	if rowsAffected == 0 {
+		return fmt.Errorf("you need to have followed the feed in the first place to unfollow")
+	}
+
+	// print successful message
+	fmt.Println("successfully unfollowed the feed")
+	return nil
+}
+
+// Handle Following
+func FollowingHandler(s *State, cmd Command, user database.User) error {
 	// Get feed follows from db
 	feedFollows, err := s.Db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
@@ -92,7 +134,7 @@ func FollowingHandler(s *State, cmd Command) error {
 }
 
 // Handle Follow
-func FollowHandler(s *State, cmd Command) error {
+func FollowHandler(s *State, cmd Command, user database.User) error {
 	// early exit with error if command arguments are empty
 	if len(cmd.Arguments) == 0 {
 		return fmt.Errorf("you need to provide the feed url to follow")
@@ -100,16 +142,10 @@ func FollowHandler(s *State, cmd Command) error {
 
 	// Feed url from command
 	feed_url := cmd.Arguments[0]
-	user_name := s.Config.CurrentUsername
 
 	feed, err := s.Db.GetFeedByUrl(context.Background(), feed_url)
 	if err != nil {
 		return fmt.Errorf("error getting feed :%w", err)
-	}
-
-	user, err := s.Db.GetUser(context.Background(), user_name)
-	if err != nil {
-		return fmt.Errorf("error getting user: %w", err)
 	}
 
 	// Create feed follow param
@@ -152,7 +188,7 @@ func FeedsHandler(s *State, cmd Command) error {
 }
 
 // Handle Add Feed
-func AddFeedHandler(s *State, cmd Command) error {
+func AddFeedHandler(s *State, cmd Command, user database.User) error {
 	// early exit with error if command arguments are empty
 	if len(cmd.Arguments) <= 1 {
 		return fmt.Errorf("your need to provide both name and url to post a feed")
@@ -162,13 +198,6 @@ func AddFeedHandler(s *State, cmd Command) error {
 	name := cmd.Arguments[0]
 	url := cmd.Arguments[1]
 
-	// Get current logged in user name
-	loggedInUserName := s.Config.CurrentUsername
-	loggedInUser, err := s.Db.GetUser(context.Background(), loggedInUserName)
-	if err != nil {
-		return err
-	}
-
 	// Create Feed Params
 	feedParams := database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -176,7 +205,7 @@ func AddFeedHandler(s *State, cmd Command) error {
 		UpdatedAt: time.Now(),
 		Name:      name,
 		Url:       url,
-		UserID:    uuid.NullUUID{UUID: loggedInUser.ID, Valid: true},
+		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
 	}
 
 	// Insert feed into database
@@ -190,7 +219,7 @@ func AddFeedHandler(s *State, cmd Command) error {
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		UserID:    loggedInUser.ID,
+		UserID:    user.ID,
 		FeedID:    insertedFeed.ID,
 	}
 	_, feedFollowErr := s.Db.CreateFeedFollow(context.Background(), feedFollowParams)

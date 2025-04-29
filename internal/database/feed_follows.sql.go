@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,6 +71,20 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 		&i.FeedName,
 	)
 	return i, err
+}
+
+const deleteFeedFollow = `-- name: DeleteFeedFollow :execresult
+DELETE FROM feed_follows
+WHERE user_id = $1 AND feed_id = $2
+`
+
+type DeleteFeedFollowParams struct {
+	UserID uuid.UUID
+	FeedID uuid.UUID
+}
+
+func (q *Queries) DeleteFeedFollow(ctx context.Context, arg DeleteFeedFollowParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteFeedFollow, arg.UserID, arg.FeedID)
 }
 
 const getFeedFollowsForUser = `-- name: GetFeedFollowsForUser :many
