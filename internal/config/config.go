@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -235,16 +236,75 @@ func AddFeedHandler(s *State, cmd Command, user database.User) error {
 
 // Agg Handler
 func AggHandler(s *State, cmd Command) error {
-	// Make the api request
-	result, err := network.FetchFeed(context.Background(), network.RSS_FEED_URL)
-	if err != nil {
-		return err
+
+	// Early exit if time between requests is not provided
+	if len(cmd.Arguments) == 0 {
+		return fmt.Errorf("time between requests must be provided")
 	}
 
-	// Print out the whole feed struct
-	fmt.Printf("%v\n", result)
+	// Get time string
+	time_string := cmd.Arguments[0]
 
+	// Parse the input time into duration
+	time_between_reqs, err := time.ParseDuration(time_string)
+	if err != nil {
+		return fmt.Errorf("error parsing the time given: %w", err)
+	}
+
+	// Collecting feeds message
+	fmt.Printf("Collecting feed every %v\n", time_string)
+
+	// Print out the feeds to console
+	ticker := time.NewTicker(time_between_reqs)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
+}
+
+// Scrape Feeds. Fetch feeds from network and print them out to console.
+func scrapeFeeds(s *State) error {
+	// Get next feed to fetch
+	nextFeed, err := s.Db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to get next feed to fetch: %w", err)
+	}
+
+	// Mark it as fetched
+	params := database.MarkFeedFetchedParams{
+		LastFetchedAt: sql.NullTime{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		UpdatedAt: time.Now(),
+		ID:        nextFeed.ID,
+	}
+	if err := s.Db.MarkFeedFetched(context.Background(), params); err != nil {
+		return fmt.Errorf("error marking feed as fetched: %w", err)
+	}
+
+	// Fetch feeds from network using the url
+	fetchedFeeds, err := fetchFeedsFromNetwork(nextFeed.Url)
+	if err != nil {
+		return fmt.Errorf("error fetching feeds from network: %w", err)
+	}
+
+	// Print out the results
+	fmt.Printf("Newly fetched feeds from %v: \n", fetchedFeeds.Channel.Title)
+	for _, feed := range fetchedFeeds.Channel.Item {
+		fmt.Printf(" * %v\n", feed.Title)
+	}
 	return nil
+}
+
+// Utility function to fetch feeds from Network
+func fetchFeedsFromNetwork(url string) (*network.RSSFeed, error) {
+	// Make the api request
+	result, err := network.FetchFeed(context.Background(), url)
+	if err != nil {
+		return &network.RSSFeed{}, err
+	}
+
+	return result, nil
 }
 
 // Users Handler
